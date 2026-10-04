@@ -82,11 +82,15 @@ if (command === "scan") {
 if (command === "duplicates") {
   const duplicateFinder = new DuplicateFinder();
 
-  duplicateFinder.on("file-processed", (data) => {
-    console.log(`Processed: ${data.path}`);
+  duplicateFinder.on("file-processed", ({ current, total }) => {
+    process.stdout.write(
+      `\rCalculating hashes... ${drawProgressBar(current, total)}`,
+    );
   });
 
   duplicateFinder.on("duplicates-found", (result) => {
+    console.log();
+
     console.log(`\nFound ${result.groups.length} duplicate groups:\n`);
 
     result.groups.forEach((group, index) => {
@@ -118,9 +122,9 @@ if (command === "organize") {
 
   const outputDirectory = args[outputIndex + 1];
 
-  organizer.on("copy-complete", (data) => {
-    console.log(
-      `${data.source} → ${data.destination} (${formatSize(data.size)})`,
+  organizer.on("copy-complete", ({ current, total }) => {
+    process.stdout.write(
+      `\rCopying files... ${drawProgressBar(current, total)}`,
     );
   });
 
@@ -128,11 +132,8 @@ if (command === "organize") {
     console.error(`Failed to copy ${data.source}: ${data.error}`);
   });
 
-  organizer.on("copy-start", (data) => {
-    console.log(`Copying: ${data.source}`);
-  });
-
   organizer.on("organize-complete", (data) => {
+    console.log();
     console.log("\nOrganization complete!");
 
     console.log("\nSummary:");
@@ -179,13 +180,15 @@ if (command === "cleanup") {
     }
   });
 
-  cleanup.on("file-deleted", (file) => {
-    console.log(
-      `[DELETED] ${file.path} - ${formatSize(file.size)} - ${file.daysOld} days old`,
-    );
+  cleanup.on("file-deleted", ({ current, total }) => {
+    process.stdout.write(`\rDeleting... ${drawProgressBar(current, total)}`);
   });
 
   cleanup.on("cleanup-complete", (data) => {
+    if (data.confirm) {
+      console.log();
+    }
+
     console.log("\nCleanup complete!");
     console.log(
       `${data.confirm ? "Deleted" : "Found"} files: ${data.affectedFiles}`,
