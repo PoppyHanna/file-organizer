@@ -17,6 +17,18 @@ function formatSize(bytes) {
   }
 }
 
+function drawProgressBar(current, total, width = 20) {
+  if (total === 0) {
+    return `${"░".repeat(width)} 0/0`;
+  }
+
+  const percentage = current / total;
+  const filled = Math.round(percentage * width);
+  const bar = "█".repeat(filled) + "░".repeat(width - filled);
+
+  return `${bar} ${current}/${total}`;
+}
+
 if (command === "scan") {
   const scanner = new Scanner();
 
@@ -24,8 +36,8 @@ if (command === "scan") {
     console.log(`Scanning: ${data.directory}`);
   });
 
-  scanner.on("progress", (processedFiles) => {
-    process.stdout.write(`\rScanning... ${processedFiles} files processed`);
+  scanner.on("progress", ({ current, total }) => {
+    process.stdout.write(`\r${drawProgressBar(current, total)}`);
   });
 
   scanner.on("scan-complete", (statistics) => {
