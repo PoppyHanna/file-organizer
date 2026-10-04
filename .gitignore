@@ -147,3 +147,11 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+
+.history
+
+# Test directories
+test-source/
+test-output/
+test-cleanup/

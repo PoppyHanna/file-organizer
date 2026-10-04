@@ -1,0 +1,185 @@
+import Scanner from "./lib/scanner.js";
+import DuplicateFinder from "./lib/duplicates.js";
+import Organizer from "./lib/organizer.js";
+import Cleanup from "./lib/cleanup.js";
+
+const command = process.argv[2];
+const directory = process.argv[3];
+const args = process.argv.slice(4);
+
+function formatSize(bytes) {
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  } else if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  } else {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+}
+
+if (command === "scan") {
+  const scanner = new Scanner();
+
+  scanner.on("scan-start", (data) => {
+    console.log(`Scanning: ${data.directory}`);
+  });
+
+  scanner.on("progress", (processedFiles) => {
+    process.stdout.write(`\rScanning... ${processedFiles} files processed`);
+  });
+
+  scanner.on("scan-complete", (statistics) => {
+    console.log();
+
+    console.log("Total files:", statistics.totalFiles);
+    console.log("Total size:", formatSize(statistics.totalSize));
+
+    console.log("\nBy File Type:");
+
+    for (const [extension, data] of statistics.byType) {
+      console.log(
+        `  ${extension}: ${data.count} files, ${formatSize(data.totalSize)}`,
+      );
+    }
+
+    console.log("\nFile Age:");
+    console.log(`  Last 7 days: ${statistics.age.last7Days} files`);
+    console.log(`  Last 30 days: ${statistics.age.last30Days} files`);
+    console.log(
+      `  Older than 90 days: ${statistics.age.olderThan90Days} files`,
+    );
+
+    console.log("\nTop 3 Largest Files:");
+
+    statistics.largestFiles.forEach((file, index) => {
+      console.log(`  ${index + 1}. ${file.path} - ${formatSize(file.size)}`);
+    });
+
+    if (statistics.oldestFile) {
+      console.log("\nOldest File:");
+      console.log(`  ${statistics.oldestFile.path}`);
+      console.log(
+        `  Modified: ${statistics.oldestFile.modified.toLocaleString()}`,
+      );
+    }
+  });
+
+  await scanner.scan(directory);
+}
+
+if (command === "duplicates") {
+  const duplicateFinder = new DuplicateFinder();
+
+  duplicateFinder.on("file-processed", (data) => {
+    console.log(`Processed: ${data.path}`);
+  });
+
+  duplicateFinder.on("duplicates-found", (result) => {
+    console.log(`\nFound ${result.groups.length} duplicate groups:\n`);
+
+    result.groups.forEach((group, index) => {
+      console.log(`Group ${index + 1}:`);
+      console.log(`  SHA-256: ${group.hash}`);
+
+      group.files.forEach((file) => {
+        console.log(`  ${file.path} (${formatSize(file.size)})`);
+      });
+
+      console.log(`  Wasted space: ${formatSize(group.wastedSpace)}\n`);
+    });
+
+    console.log(`Total wasted space: ${formatSize(result.wastedSpace)}`);
+  });
+
+  await duplicateFinder.find(directory);
+}
+
+if (command === "organize") {
+  const organizer = new Organizer();
+
+  const outputIndex = args.indexOf("--output");
+
+  if (outputIndex === -1 || !args[outputIndex + 1]) {
+    console.error("Error: Please specify --output directory.");
+    process.exit(1);
+  }
+
+  const outputDirectory = args[outputIndex + 1];
+
+  organizer.on("copy-complete", (data) => {
+    console.log(
+      `${data.source} → ${data.destination} (${formatSize(data.size)})`,
+    );
+  });
+
+  organizer.on("copy-error", (data) => {
+    console.error(`Failed to copy ${data.source}: ${data.error}`);
+  });
+
+  organizer.on("copy-start", (data) => {
+    console.log(`Copying: ${data.source}`);
+  });
+
+  organizer.on("organize-complete", (data) => {
+    console.log("\nOrganization complete!");
+
+    console.log("\nSummary:");
+
+    for (const [category, count] of Object.entries(data.categoryCounts)) {
+      console.log(`  ${category}: ${count} files`);
+    }
+
+    console.log(`\nTotal copied: ${data.copiedFiles} files`);
+    console.log(`Total size: ${formatSize(data.totalSize)}`);
+  });
+
+  await organizer.organize(directory, outputDirectory);
+}
+
+if (command === "cleanup") {
+  const cleanup = new Cleanup();
+
+  const olderThanIndex = args.indexOf("--older-than");
+
+  if (olderThanIndex === -1 || !args[olderThanIndex + 1]) {
+    console.error("Error: Please specify --older-than N.");
+    process.exit(1);
+  }
+
+  const olderThan = Number(args[olderThanIndex + 1]);
+
+  if (Number.isNaN(olderThan) || olderThan < 0) {
+    console.error("Error: --older-than must be a positive number.");
+    process.exit(1);
+  }
+
+  const confirm = args.includes("--confirm");
+
+  cleanup.on("file-found", (file) => {
+    if (!confirm) {
+      console.log(
+        `[DRY RUN] ${file.path} - ${formatSize(file.size)} - ${file.daysOld} days old`,
+      );
+    } else {
+      console.log(
+        `[FOUND] ${file.path} - ${formatSize(file.size)} - ${file.daysOld} days old`,
+      );
+    }
+  });
+
+  cleanup.on("file-deleted", (file) => {
+    console.log(
+      `[DELETED] ${file.path} - ${formatSize(file.size)} - ${file.daysOld} days old`,
+    );
+  });
+
+  cleanup.on("cleanup-complete", (data) => {
+    console.log("\nCleanup complete!");
+    console.log(
+      `${data.confirm ? "Deleted" : "Found"} files: ${data.affectedFiles}`,
+    );
+    console.log(`Total size: ${formatSize(data.totalSize)}`);
+  });
+
+  await cleanup.clean(directory, olderThan, confirm);
+}
